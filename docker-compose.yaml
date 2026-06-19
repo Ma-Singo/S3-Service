@@ -1,0 +1,57 @@
+x-app-base: &app-base
+  build:
+    context: .
+  env_file: .env
+  environment:
+    - APP_ENV=development
+    - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:5432/${POSTGRES_DB}
+
+x-app-depends: &app-depends
+  depends_on:
+    db:
+      condition: service_healthy
+
+
+services:
+  migrate:
+    <<: *app-base
+    container_name: mel_migrate
+    command: sh -c "uv run alembic upgrade head"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: [*app-base, *app-depends]
+    container_name: api
+    command: uvicorn app.main:app --reload
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health  || exit 1"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  db:
+    image: postgres:16-alpine
+    container_name: database
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-joker }
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-joker123}
+      POSTGRES_DB: ${POSTGRES_DB:-jdb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-media}"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+
+
+volumes:
+  pgdata:
